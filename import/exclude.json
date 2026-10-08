@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "path": "/",
+      "reason": "Rebuilt as data-driven home (frontmatter `home`) with editable sections",
+      "id": "771"
+    },
+    {
+      "path": "/comunidad-en-expansion",
+      "reason": "Rebuilt with ::split-hero / ::centered-block directives",
+      "id": "5613"
+    },
+    {
+      "path": "/wikiaccion-peru-en-medios",
+      "reason": "JS grid replaced by ::media-mentions + data/medios.json",
+      "id": "6631"
+    }
+  ]
+}

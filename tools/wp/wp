@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# One entry point for the WordPress tooling. Same commands on a PC and on wmcloud (no Claude skills needed).
+#   tools/wp/wp help
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+export WP_VAR_DIR="${WP_VAR_DIR:-$ROOT/var}"            # extract/, venv, backups, lock: never committed
+VENV="$WP_VAR_DIR/.venv"
+PY="$VENV/bin/python"
+cd "$ROOT"
+
+cfg() { python3 - "$1" <<'PYEOF'
+import json, os, sys
+c = json.load(open(os.path.join(os.environ.get("WP_TOOLS", "tools/wp"), "config.json")))
+print(os.environ.get("WP_SOURCE_URL", c["source_url"]) if sys.argv[1] == "source_url" else c[sys.argv[1]])
+PYEOF
+}
+say() { printf '\033[1m[wp]\033[0m %s\n' "$*"; }
+need_py() {
+  [ -x "$PY" ] && return 0
+  say "first run: creating the Python environment ($VENV)"
+  command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
+  python3 -m venv "$VENV" 2>/dev/null || { echo "python3-venv is missing. On Debian/Ubuntu: sudo apt install python3-venv"; exit 1; }
+  "$VENV/bin/pip" install -q --disable-pip-version-check -r "$HERE/requirements.txt"
+}
+# a fresh clone has the committed sample but none of the generated data files: copy the seed copies (no Node needed)
+seed() { mkdir -p "$ROOT/data"; for f in "$HERE"/seed-data/*.json; do [ -e "$ROOT/data/$(basename "$f")" ] || cp "$f" "$ROOT/data/"; done; }
+# bootstrap needs room: ~1.2 GB images + ~150 MB extract + the build output (~1.6 GB)
+need_space() {
+  local free_kb; free_kb=$(df -Pk "$ROOT" | awk 'NR==2{print $4}')
+  if [ "${free_kb:-0}" -lt "${1:-3000000}" ]; then
+    echo "only $((free_kb/1024)) MB free on the disk holding $ROOT; this needs about $(( ${1:-3000000}/1024 )) MB. Free some space (or set WP_VAR_DIR / clone elsewhere), or pass --force."
+    [ "${WP_FORCE:-}" = 1 ] || exit 1
+  fi
+}
+
+usage() { cat <<'TXT'
+wp — WordPress → site tooling (run from anywhere inside the repo: tools/wp/wp <command>)
+
+ first time after `git clone`
+   setup                 create the Python environment (var/.venv)
+   bootstrap             rebuild the whole site from WordPress: extract → import → media   (≈ 30–40 min, once)
+ later, while WordPress is still live
+   update                extract again + DRY-RUN import (writes import/report.md; changes nothing)
+   import [--apply]      the delta import (see import/README.md); take|keep|exclude|include PATH resolve/protect pages
+   media                 fetch the media that pages use and are missing (shrunk to 1024 px)
+ maintenance
+   extract               pull WordPress into var/extract (content only)
+   reindex               rebuild data/routes.json and data/taxonomy-index.json from the real content
+   backup                tar of content/, data/, import/, admins.md → var/backups/ (keeps the last 14)
+   status                what is here: pages, media, last import
+   test                  run the tool tests (no network)
+ env: WP_SOURCE_URL (default from tools/wp/config.json), WP_VAR_DIR (default ./var)
+TXT
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  help|-h|--help) usage ;;
+  setup) need_py; seed; say "ready. Next: tools/wp/wp bootstrap" ;;
+  extract)
+    need_py; mkdir -p "$WP_VAR_DIR"
+    [ -d "$WP_VAR_DIR/extract/data" ] || { mkdir -p "$WP_VAR_DIR/extract/data"; }
+    "$PY" "$HERE/extract.py" run "$(cfg source_url)" --out "$WP_VAR_DIR/extract" --no-media "$@" ;;
+  import) need_py; seed; "$PY" "$HERE/import_delta.py" "$@" ;;
+  reindex) need_py; "$PY" "$HERE/import_delta.py" reindex ;;
+  media) need_py; seed; need_space 1500000; "$PY" "$HERE/fetch_media.py" "$@" ;;
+  update)
+    need_py; seed
+    [ -f import/state.json ] || { echo "no baseline yet: run  tools/wp/wp bootstrap  first"; exit 1; }
+    "$0" extract
+    "$PY" "$HERE/import_delta.py"
+    say "review import/report.md, then:  tools/wp/wp import --apply  &&  tools/wp/wp media" ;;
+  bootstrap)
+    need_py; seed
+    [ "${1:-}" = "--force" ] && { WP_FORCE=1; shift; }
+    need_space 3500000
+    if [ -f import/state.json ] && [ "${1:-}" != "--again" ]; then
+      echo "this site was already bootstrapped (import/state.json exists). To pull WordPress changes use:  tools/wp/wp update"
+      echo "to redo the baseline anyway: tools/wp/wp bootstrap --again"; exit 1
+    fi
+    say "1/4 extracting WordPress ($(cfg source_url)) — a few minutes"; "$0" extract
+    say "2/4 setting the baseline (adopting the committed sample pages)"; "$PY" "$HERE/import_delta.py" --init
+    say "3/4 importing every page"; "$PY" "$HERE/import_delta.py" --apply
+    say "4/4 fetching media (only what pages use) — the longest step"; "$PY" "$HERE/fetch_media.py"
+    "$PY" "$HERE/import_delta.py" reindex >/dev/null
+    say "done. Content and media are rebuilt. Next: npm ci && npm run generate   (and: tools/wp/wp backup — edits live only here, not on GitHub)" ;;
+  backup)
+    mkdir -p "$WP_VAR_DIR/backups"
+    f="$WP_VAR_DIR/backups/wp-$(date +%Y%m%d-%H%M%S).tgz"
+    tar czf "$f" -C "$ROOT" --exclude='import/conflicts' --exclude='import/backup' content data import admins.md 2>/dev/null
+    ls -1t "$WP_VAR_DIR"/backups/wp-*.tgz | tail -n +15 | xargs -r rm -f
+    say "backup written: $f ($(du -h "$f" | cut -f1))" ;;
+  status)
+    echo "pages:   $(find content -name '*.md' -not -path '*/.*' 2>/dev/null | wc -l)  (sample committed: $(python3 -c "import json;print(len(json.load(open('tools/wp/sample.json'))['content']))" 2>/dev/null || echo ?))"
+    echo "media:   $(find public/media -type f 2>/dev/null | wc -l) files, $(du -sh public/media 2>/dev/null | cut -f1)"
+    echo "state:   $([ -f import/state.json ] && echo 'baseline set' || echo 'not bootstrapped')   extract: $([ -d "$WP_VAR_DIR/extract/content" ] && echo yes || echo no)"
+    [ -f import/report.md ] && sed -n '1,3p' import/report.md || true ;;
+  test) need_py; "$PY" "$ROOT/tests/test_import_delta.py"; "$PY" "$ROOT/tests/test_tools.py" ;;
+  *) echo "unknown command: $cmd"; usage; exit 1 ;;
+esac
