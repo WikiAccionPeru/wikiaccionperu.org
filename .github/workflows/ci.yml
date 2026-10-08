@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Create .env from GitHub secrets
+        run: |
+          cat > .env <<EOF
+          CLIENT_ID=${CLIENT_ID}
+          CLIENT_SECRET=${CLIENT_SECRET}
+          EOF
+        env:
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+      - run: npm run lint
+        continue-on-error: true # lint debt inherited from lingualibre.org
+      - run: npm run test:unit
+      - run: npm run build
