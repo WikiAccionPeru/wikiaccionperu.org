@@ -1,0 +1,74 @@
+[
+ {
+  "title": "Inicio",
+  "url": "/",
+  "children": []
+ },
+ {
+  "title": "Sobre el proyecto",
+  "url": "/sobre-el-proyecto/",
+  "children": [
+   {
+    "title": "Reportes",
+    "url": "/reportes/",
+    "children": []
+   },
+   {
+    "title": "Convocatorias",
+    "url": "/categoria/convocatorias/",
+    "children": []
+   }
+  ]
+ },
+ {
+  "title": "Recursos",
+  "url": "/recursos/",
+  "children": [
+   {
+    "title": "Colecciones bibliográficas",
+    "url": "/tipo-recurso/colecciones-bibliograficas/",
+    "children": []
+   },
+   {
+    "title": "Informes y relatorías",
+    "url": "/tipo-recurso/materiales-de-difusion/",
+    "children": []
+   },
+   {
+    "title": "Tutoriales y guías",
+    "url": "/tipo-recurso/tutoriales-y-guias/",
+    "children": []
+   },
+   {
+    "title": "Materiales educativos",
+    "url": "/categoria/materiales-educativos/",
+    "children": []
+   },
+   {
+    "title": "Publicaciones",
+    "url": "/tipo-recurso/publicaciones/",
+    "children": []
+   },
+   {
+    "title": "Cursos",
+    "url": "/tipo-recurso/cursos/",
+    "children": []
+   },
+   {
+    "title": "Conversatorios",
+    "url": "/tipo-recurso/conversatorios/",
+    "children": []
+   }
+  ]
+ },
+ {
+  "title": "Comunidad",
+  "url": "/comunidad-en-expansion/",
+  "children": []
+ },
+ {
+  "title": "Noticias",
+  "url": "/noticias/",
+  "children": []
+ }
+]
